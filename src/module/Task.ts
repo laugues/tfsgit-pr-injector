@@ -6,10 +6,10 @@ import path = require('path');
 import glob = require('glob');
 
 import tl = require('vsts-task-lib/task');
-import { PrcaOrchestrator } from './prca/PrcaOrchestrator';
-import { TaskLibLogger } from './TaskLibLogger';
+import {PrcaOrchestrator} from './prca/PrcaOrchestrator';
+import {TaskLibLogger} from './TaskLibLogger';
 
-tl.setResourcePath(path.join( __dirname, 'task.json'));
+tl.setResourcePath(path.join(__dirname, 'task.json'));
 
 stopOnNonPrBuild();
 let report: string = findSQReportByName();
@@ -20,7 +20,11 @@ var orchestrator: PrcaOrchestrator = PrcaOrchestrator.Create(
     getBearerToken(),
     tl.getVariable('Build.Repository.Id'),
     getPullRequestId(),
-    getMessgeLimit());
+    getMessgeLimit(),
+    getMinimumSeverityToDisplay(),
+    getFailedTaskSeverity(),
+    getCommentDisplayNamesToDelete(),
+    getSonarQubeUrl());
 
 orchestrator.postSonarQubeIssuesToPullRequest(report)
     .then(() => {
@@ -35,7 +39,11 @@ orchestrator.postSonarQubeIssuesToPullRequest(report)
 
 function findSQReportByName(): string {
 
-    let reportGlob = path.join(tl.getVariable('build.sourcesDirectory'), '**', 'sonar-report.json');
+    let buildeSourceDirectory = tl.getVariable('build.sourcesDirectory');
+
+
+    tl.debug(`[PRCA] findSQReportByName => buildeSourceDirectory ${buildeSourceDirectory}`);
+    let reportGlob = path.join(buildeSourceDirectory, '**', 'sonar-report.json');
     let reportGlobResults: string[] = glob.sync(reportGlob);
 
     tl.debug(`[PRCA] Searching for ${reportGlob} - found ${reportGlobResults.length} file(s)`);
@@ -88,7 +96,7 @@ function getMessgeLimit(): number {
     let messageLimit: number = ~~Number(messageLimitInput); // Convert to a number and truncate (~~) any fraction
     if (isNaN(messageLimit) // if a number could not be constructed out of messageLimitInput
         || String(messageLimit) !== messageLimitInput // or if the strings are not equal when converted back (should pass for expected number values)
-        || messageLimit < 1)  { // or if the input was "0" or negative
+        || messageLimit < 1) { // or if the input was "0" or negative
         // Looks like: "Expected message limit to be a number, but instead it was NOT_A_NUMBER"
         tl.setResult(tl.TaskResult.Failed, tl.loc('Error_InvalidMessageLimit', messageLimitInput));
         process.exit(1);
@@ -96,6 +104,61 @@ function getMessgeLimit(): number {
 
     tl.debug('[PRCA] The message limit is: ' + messageLimit);
     return messageLimit;
+}
+
+function getMinimumSeverityToDisplay(): string {
+    let minimumSeverityToDisplay: string = tl.getInput('minimumSeverityToDisplay');
+    if (typeof  minimumSeverityToDisplay === undefined
+        || minimumSeverityToDisplay === null
+        || minimumSeverityToDisplay === '') {
+        tl.setResult(tl.TaskResult.Failed, tl.loc('Error_InvalidMinimumSeverityToDisplay', minimumSeverityToDisplay));
+        process.exit(1);
+    }
+
+    tl.debug('[PRCA] The minimum issues severity to display is: ' + minimumSeverityToDisplay);
+    return minimumSeverityToDisplay;
+}
+
+function getFailedTaskSeverity(): string {
+    let failedSeverity: string = tl.getInput('failedTaskSeverity');
+    if (typeof  failedSeverity === undefined
+        || failedSeverity === null
+        || failedSeverity === '') {
+        tl.setResult(tl.TaskResult.Failed, tl.loc('Error_InvalidFailedTaskSeverity', failedSeverity));
+        process.exit(1);
+    }
+
+    tl.debug('[PRCA] The failed task severity is: ' + failedSeverity);
+    return failedSeverity;
+}
+
+function getCommentDisplayNamesToDelete(): string[] {
+    let parameter: string = tl.getInput('commentDisplayNamesToDelete');
+    if (typeof  parameter === undefined
+        || parameter === null) {
+        tl.setResult(tl.TaskResult.Failed, tl.loc('Error_InvalidCommentDisplayNamesToDelete', parameter));
+        process.exit(1);
+    }
+    let displayNames = parameter.split(',');
+    tl.debug('[PRCA] The failed task severity is: ' + parameter);
+    return displayNames;
+}
+
+function getSonarQubeUrl(): string {
+    // Check to ensure getEndpointUrl exists on the current agent
+    if (tl.getEndpointUrl == null) {
+        tl.debug('Could not decode the generic endpoint. Please ensure you are running the latest agent (min version 0.3.2)');
+        throw new Error('Could not decode the generic endpoint. Please ensure you are running the latest agent (min version 0.3.2)');
+    }
+
+    //let genericEndpointName: string = tl.getInput('sqConnectedServiceName');
+    let hostUrl: string = '';
+    //let hostUrl: string = tl.getEndpointUrl(genericEndpointName, false);
+    if (hostUrl != null && hostUrl !== '' && !hostUrl.endsWith('/')) {
+        hostUrl = hostUrl + '/';
+    }
+    tl.debug(`[PRCA] SonarQube endpoint: ${hostUrl}`);
+    return hostUrl;
 }
 
 function getBearerToken() {

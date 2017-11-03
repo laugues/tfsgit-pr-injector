@@ -1,7 +1,7 @@
 /// <reference path="../../../typings/index.d.ts" />
 
-import { Message } from '../../module/prca/Message';
-import { IPrcaService } from '../../module/prca/IPrcaService';
+import {Message} from '../../module/prca/Message';
+import {IPrcaService} from '../../module/prca/IPrcaService';
 
 /**
  * Mock PrcaService for use in testing
@@ -26,7 +26,7 @@ export class MockPrcaService implements IPrcaService {
         return Promise.resolve();
     }
 
-    public deleteCodeAnalysisComments(): Promise<void> {
+    public deleteCodeAnalysisComments(displayNames: string[]): Promise<void> {
         if (this.deleteCodeAnalysisComments_shouldFail) {
             return Promise.reject(new Error('mock failure when deleting code analysis threads'));
         }

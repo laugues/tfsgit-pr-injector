@@ -40,7 +40,7 @@ context('deleteCodeAnalysisComments', () => {
 
         // Act
         await prcaService.createCodeAnalysisThreads([message1, message2]);
-        await prcaService.deleteCodeAnalysisComments();
+        await prcaService.deleteCodeAnalysisComments([]);
 
         // Assert
         var threads = mockGitApi.ExistingThreads;
@@ -61,7 +61,7 @@ context('deleteCodeAnalysisComments', () => {
 
         mockGitApi.configureException(ErrorTarget.getPullRequestIterations);
 
-        await prcaService.deleteCodeAnalysisComments();
+        await prcaService.deleteCodeAnalysisComments([]);
 
         // Assert
         var threads = mockGitApi.ExistingThreads;
@@ -82,7 +82,7 @@ context('deleteCodeAnalysisComments', () => {
         mockGitApi.configureException(ErrorTarget.deleteComment);
 
         try {
-            await prcaService.deleteCodeAnalysisComments();
+            await prcaService.deleteCodeAnalysisComments([]);
             done('Expected createCodeAnalysisThreads to have failed');
         } catch (e) {
             chai.expect(e.message).to.equal(ConfigurableGitApi.ExpectedExceptionText);
@@ -103,7 +103,7 @@ context('deleteCodeAnalysisComments', () => {
         mockGitApi.configureException(ErrorTarget.getThreads);
 
         try {
-            await prcaService.deleteCodeAnalysisComments();
+            await prcaService.deleteCodeAnalysisComments([]);
             done('Expected createCodeAnalysisThreads to have failed');
         } catch (e) {
             chai.expect(e.message).to.equal(ConfigurableGitApi.ExpectedExceptionText);
@@ -134,7 +134,7 @@ context('deleteCodeAnalysisComments', () => {
         var threads = JSON.parse(data);
         mockGitApi.ExistingThreads = threads.value;
 
-        await prcaService.deleteCodeAnalysisComments();
+        await prcaService.deleteCodeAnalysisComments([]);
 
         var threadsThatShouldBeDeleted = mockGitApi.ExistingThreads.filter(t => [1059, 1060, 1061, 1062, 1063].indexOf(t.id) > -1);
         chai.expect(threadsThatShouldBeDeleted).to.have.length(5, 'Missing threads');

@@ -1,46 +1,48 @@
 /// <reference path="../../../typings/index.d.ts" />
-
+///<reference path="../../../typings/globals/node/index.d.ts"/>
+import tl = require('vsts-task-lib/task');
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { PRInjectorError } from './PRInjectorError';
-import { Message } from './Message';
-import { ILogger } from './ILogger';
-import { ISonarQubeReportProcessor } from './ISonarQubeReportProcessor';
+import {exec} from 'ts-process-promises';
+
+import {PRInjectorError} from './PRInjectorError';
+import {Message} from './Message';
+import {ILogger} from './ILogger';
+import {ISonarQubeReportProcessor} from './ISonarQubeReportProcessor';
+import {Process} from 'process';
+import {WriteableStream} from 'process';
+import {ISeverityService} from './ISeverityService';
 
 
 /**
  * Responsible for parsing the SQ file containg the issues and the paths
- * 
+ *
  * @export
  * @class SonarQubeReportProcessor
  * @implements {ISonarQubeReportProcessor}
  */
 
-enum Priority {
-    blocker = 1,
-    critical,
-    major,
-    minor,
-    info,
-    none
-}
-
 export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
-
     private logger: ILogger;
 
-    constructor(logger: ILogger) {
+    private severityService: ISeverityService;
+    private sonarQubeUrl: string;
+
+    constructor(logger: ILogger, severityService: ISeverityService, sonarQubeUrl: string) {
         if (!logger) {
             throw new ReferenceError('logger');
         }
 
         this.logger = logger;
+        this.severityService = severityService;
+        this.sonarQubeUrl = sonarQubeUrl;
     }
 
     /* Interface methods */
 
-    public FetchCommentsFromReport(reportPath: string): Message[] {
+    public async FetchCommentsFromReport(reportPath: string): Promise<Message[]> {
+        let startTime = new Date().getTime();
 
         if (!reportPath) {
             throw new ReferenceError('reportPath');
@@ -62,7 +64,11 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
         }
 
         let componentMap = this.buildComponentMap(sonarQubeReport);
-        return this.buildMessages(sonarQubeReport, componentMap);
+        let messages = await this.buildMessages(sonarQubeReport, componentMap);
+        let endTime = new Date().getTime();
+
+        this.logger.LogInfo(`[SonarQubetReportPRocessor] took ${endTime - startTime} ms to fetch comments from sonar report`);
+        return messages;
     }
 
     /* Helper methods */
@@ -74,6 +80,7 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
             this.logger.LogInfo('The SonarQube report is empty as it lists no components');
             return map;
         }
+        this.logger.LogDebug(`[SonarQubeReportProcessor]buildComponentMap sonarQubeReport.components.length is [${sonarQubeReport.components.length}]`);
 
         for (var component of sonarQubeReport.components) {
             if (!component.key) {
@@ -81,17 +88,20 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
             }
 
             if (component.path != null) {
-                let fullPath: string = component.path;
+                let componentPath: string = component.path;
 
+
+                this.logger.LogDebug(`[SonarQubeReportProcessor] component.path is [${componentPath}] for module key [${component.moduleKey}] `);
                 if (component.moduleKey != null) { // if the component belongs to a module, we need to prepend the module path
                     // #TODO: Support nested modules once the SonarQube report correctly lists moduleKey in nested modules
                     var buildModule: any = this.getObjectWithKey(sonarQubeReport.components, component.moduleKey);
+                    this.logger.LogDebug(`[SonarQubeReportProcessor] buildModule.path is [${buildModule.path}] for module key [${component.moduleKey}] `);
                     if (buildModule.path != null) { // some modules do not list a path
-                        fullPath = path.join(buildModule.path, component.path);
+                        componentPath = path.join(buildModule.path, component.path);
                     }
                 }
 
-                map.set(component.key, '/' + fullPath); // the PR file paths have a leading separator
+                map.set(component.key, '/' + componentPath); // the PR file paths have a leading separator
             }
         }
 
@@ -100,18 +110,21 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
         return map;
     }
 
-    private buildMessages(sonarQubeReport: any, componentMap: Map<string, string>): Message[] {
-
-        let messages: Message[] = [];
+    private async buildMessages(sonarQubeReport: any, componentMap: Map<string, string>): Promise<Message[]> {
 
         // no components, i.e. empty report
         if (componentMap.size === 0) {
-            return messages;
+            this.logger.LogInfo('The SonarQube report is empty.');
+            return new Promise<Message[]>(resolve => {
+                resolve([]);
+            });
         }
 
         if (!sonarQubeReport.issues) {
             this.logger.LogInfo('The SonarQube report is empty as there are no issues');
-            return messages;
+            return new Promise<Message[]>(resolve => {
+                resolve([]);
+            });
         }
 
         let issueCount: number = sonarQubeReport.issues.length;
@@ -120,8 +133,16 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
         });
 
         this.logger.LogInfo(`The SonarQube report contains ${issueCount} issues, out of which ${newIssues.length} are new.`);
+        let buildeSourceDirectory = tl.getVariable('build.sourcesDirectory');
 
+        if (buildeSourceDirectory === null || typeof  buildeSourceDirectory === 'undefined') {
+            buildeSourceDirectory = '.';
+        }
+        let result: Message[] = [];
+        let filesCache: Map<string, string> = new Map();
+        var self = this;
         for (var issue of newIssues) {
+            this.logger.LogDebug(`Treating issue  : ${issue.message}`);
             let issueComponent = issue.component;
 
             if (!issueComponent) {
@@ -129,25 +150,77 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
             }
 
             let filePath: string = componentMap.get(issueComponent);
+
             filePath = this.normalizeIssuePath(filePath);
+            let pathForCommand: string = filePath.replace(/\//g, '\\');
+            this.logger.LogDebug(`stdout pathForCommand ${pathForCommand}`);
 
-            if (!filePath) {
-                throw new PRInjectorError(`Invalid SonarQube report - an issue belongs to an invalid component. Content ${issue.content}`);
-            }
+            let command = 'where /r ' + buildeSourceDirectory + ' *.* | find' + ' "' + pathForCommand + '"';
+            this.logger.LogDebug(`Running common line : ${command}`);
 
-            let message: Message = this.buildMessage(filePath, issue);
-
-            if (message) {
-                messages.push(message);
+            if (filesCache.get(pathForCommand) == null) {
+                try {
+                    await exec(command)
+                        .on('process', async process => {
+                            this.logger.LogDebug(`process ${process.pid} ==> filePath : ${filePath} // issue message  ${issue.message}`);
+                            let message = await self.fillMessagePromise(process, buildeSourceDirectory, issue, filePath);
+                            filesCache.set(pathForCommand, message.file);
+                            result.push(message);
+                            this.logger.LogDebug(`messages.length : ${result.length}`);
+                        })
+                        .on('stderr', line => {
+                            this.logger.LogWarning(`stderr Data : ${JSON.stringify(line)}`);
+                        });
+                } catch (e) {
+                    this.logger.LogWarning(`Unable to execute the command line ${command}. Error ${e.message}`);
+                }
+            } else {
+                this.logger.LogInfo(`File [${pathForCommand}] already exist, get it from cache...`);
+                filePath = filesCache.get(pathForCommand);
+                result.push(this.buildMessage(filePath, issue));
             }
 
         }
+        this.logger.LogInfo(`Build Message done! : Message number ${result.length}`);
 
-        return messages;
+        return result;
+    }
+
+    private async fillMessagePromise(process: Process, buildeSourceDirectory: string, issue: any, filePath: string): Promise<Message> {
+        let processObject: Process = process;
+        let stdout: WriteableStream = processObject.stdout;
+        let result = '';
+        let filePathFromSourceRoot: string = '';
+        stdout.on('data', chunk => {
+            result += chunk.toString();
+        });
+        return await  new Promise<Message>(resolve => {
+            // Send the buffer or you can put it into a var
+            stdout.on('end', () => {
+                filePathFromSourceRoot = this.escapeCommandResult(result);
+                if (filePathFromSourceRoot.length > 0) {
+                    filePathFromSourceRoot = filePathFromSourceRoot.substring(buildeSourceDirectory.length, filePathFromSourceRoot.length);
+                    filePathFromSourceRoot = this.normalizeIssuePath(filePathFromSourceRoot);
+                    filePath = filePathFromSourceRoot;
+                }
+
+                if (!filePath) {
+                    throw new PRInjectorError(`Invalid SonarQube report - an issue belongs to an invalid component. Content ${issue.content}`);
+                }
+
+                let message: Message = this.buildMessage(filePath, issue);
+                resolve(message);
+
+            });
+        });
+    }
+
+    private escapeCommandResult(result: string) {
+        return result.replace(/(?:[\r\n]+)+/g, '');
     }
 
     /**
-     * SQ for Maven / Gradle seem to produce inconsistent paths  
+     * SQ for Maven / Gradle seem to produce inconsistent paths
      */
     private normalizeIssuePath(filePath: string) {
 
@@ -166,12 +239,12 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
 
     // todo: filter out assembly level issues ?
     private buildMessage(path: string, issue: any): Message {
-        let priority: number = this.getPriority(issue);
+        let priority: number = this.severityService.getSeverityFromIssue(issue);
         let content: string = this.buildMessageContent(issue.message, issue.rule, priority);
 
         if (!issue.line) {
             this.logger.LogWarning(
-                    `A SonarQube issue does not have an associated line and will be ignored. File ${path}. Content ${content}`);
+                `A SonarQube issue does not have an associated line and will be ignored. File ${path}. Content ${content}`);
             return null;
         }
 
@@ -179,66 +252,30 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
 
         if (line < 1) {
             this.logger.LogWarning(
-                    `A SonarQube issue was reported on line ${line} and will be ignored. File ${path}. Content ${content}`);
+                `A SonarQube issue was reported on line ${line} and will be ignored. File ${path}. Content ${content}`);
             return null;
         }
 
         let message: Message = new Message(content, path, line, priority);
+        this.logger.LogDebug(`Message built : ${message}`);
         return message;
     }
 
     private buildMessageContent(message: string, rule: string, priority: number): string {
         let content: string = '';
 
-        if (priority < Priority.none) {
-            let severity: string = this.getSeverityDisplayName(priority);
+        if (priority > this.severityService.getSeverityFromString('none')) {
+            let severity: string = this.severityService.getSeverityDisplayName(priority);
             content = `**_${severity}_**: `;
         }
 
-        content += `${message} (${rule})`;
+        let descriptionLink: string = '';
+        if (this.sonarQubeUrl != null && this.sonarQubeUrl !== '') {
+            descriptionLink = ` description is [here](${this.sonarQubeUrl}/coding_rules#q=${rule}|languages=java))`;
+        }
+        content += `${message} (${rule}).${descriptionLink}`;
 
         return content;
-    }
-
-    private getSeverityDisplayName(priority: Number): string {
-        switch (priority) {
-            case Priority.blocker:
-                return Priority[Priority.blocker];
-            case Priority.critical:
-                return Priority[Priority.critical];
-            case Priority.major:
-                return Priority[Priority.major];
-            case Priority.minor:
-                return Priority[Priority.minor];
-            case Priority.info:
-                return Priority[Priority.info];
-            default:
-                return Priority[Priority.none];
-        }
-    }
-
-    private getPriority(issue: any) {
-
-        let severity: string = issue.severity;
-        if (!severity) {
-            this.logger.LogDebug(`Issue ${issue.content} does not have a priority associated` );
-            severity = 'none';
-        }
-
-        switch (severity.toLowerCase()) {
-            case 'blocker':
-                return Priority.blocker;
-            case 'critical':
-                return Priority.critical;
-            case 'major':
-                return Priority.major;
-            case 'minor':
-                return Priority.minor;
-            case 'info':
-                return Priority.info;
-            default:
-                return Priority.none;
-        }
     }
 
     /**
@@ -262,5 +299,9 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
                 return component;
             }
         }
+    }
+
+    public getSeverityService(): ISeverityService {
+        return this.severityService;
     }
 }

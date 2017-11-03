@@ -1,6 +1,6 @@
 /**
  * Data class for a message that will be posted to the current code review
- * 
+ *
  * @export
  * @class Message
  */
@@ -9,13 +9,13 @@ export class Message {
     private _content: string;
     private _file: string;
     private _line: number;
-    private _priority: number;
+    private _severity: number;
 
     /**
      * Creates an instance of Message.
-     * 
+     *
      */
-    constructor(content: string, file: string, line: number, priority: number) {
+    constructor(content: string, file: string, line: number, severity: number) {
         if (!content) {
             throw new ReferenceError('A message must have content');
         }
@@ -31,16 +31,16 @@ export class Message {
         this._content = content;
         this._file = file;
         this._line = line;
-        this._priority = priority;
+        this._severity = severity;
     }
 
     public static compare(a: Message, b: Message): number {
-            return a.priority - b.priority;
+        return a.severity - b.severity;
     }
 
     /**
      * The textual content of the message that will be posted. MD format might be supported
-     * 
+     *
      * @readonly
      * @type {string}
      */
@@ -50,7 +50,7 @@ export class Message {
 
     /**
      * The path, relative to the repo root, to the file where the comment will be posted.
-     * 
+     *
      * @readonly
      * @type {string}
      */
@@ -60,7 +60,7 @@ export class Message {
 
     /**
      * The line number where the message is to be posted
-     * 
+     *
      * @readonly
      * @type {number}
      */
@@ -69,24 +69,24 @@ export class Message {
     }
 
     /**
-     * The priority of the message, used to limit the number of messages that get posted. 
+     * The severity of the message, used to limit the number of messages that get posted.
      * A lower number means a message is more likely to be posted.
-     * 
+     *
      * @readonly
      * @type {number}
      */
-    get priority(): number {
-        return this._priority;
+    get severity(): number {
+        return this._severity;
     }
 
     /**
      * Returns a string representation fo the message, useful for outputting in the logs / errors
-     * 
+     *
      * @returns {string}
-     * 
+     *
      * @memberOf Message
      */
-    public toString() : string {
+    public toString(): string {
         return JSON.stringify(this, null, 4);
     }
 

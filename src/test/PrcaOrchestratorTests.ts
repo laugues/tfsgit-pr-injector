@@ -4,23 +4,26 @@
  * Tests for interactions with the server.
  */
 
-import { Message } from '../module/prca/Message';
-import { SonarQubeReportProcessor } from '../module/prca/SonarQubeReportProcessor';
-import { PrcaOrchestrator } from '../module/prca/PrcaOrchestrator';
+import {Message} from '../module/prca/Message';
+import {SonarQubeReportProcessor} from '../module/prca/SonarQubeReportProcessor';
+import {PrcaOrchestrator} from '../module/prca/PrcaOrchestrator';
 
-import { TestLogger } from './mocks/TestLogger';
-import { MockPrcaService } from './mocks/MockPrcaService';
-import { MockSonarQubeReportProcessor } from './mocks/MockSonarQubeReportProcessor';
+import {TestLogger} from './mocks/TestLogger';
+import {MockPrcaService} from './mocks/MockPrcaService';
+import {MockSonarQubeReportProcessor} from './mocks/MockSonarQubeReportProcessor';
 
 import * as chai from 'chai';
-import { expect } from 'chai';
+import {expect} from 'chai';
 import * as path from 'path';
+import {SeverityService} from '../module/prca/SeverityService';
+import {ISeverityService} from '../module/prca/ISeverityService';
 
 describe('The PRCA Orchestrator', () => {
 
     let fakeMessage: Message = new Message('foo bar', './foo/bar.txt', 1, 1);
-
+    let testLogger: TestLogger;
     before(() => {
+        testLogger = new TestLogger();
         chai.should();
     });
 
@@ -33,8 +36,9 @@ describe('The PRCA Orchestrator', () => {
         beforeEach(() => {
             testLogger = new TestLogger();
             server = new MockPrcaService();
-            sqReportProcessor = new SonarQubeReportProcessor(testLogger);
-            orchestrator = new PrcaOrchestrator(testLogger, sqReportProcessor, server);
+            let severityService: ISeverityService = new SeverityService(testLogger);
+            sqReportProcessor = new SonarQubeReportProcessor(testLogger, severityService, '');
+            orchestrator = new PrcaOrchestrator(testLogger, sqReportProcessor, server, '');
         });
 
         it('fails retrieving the list of files in the pull request', () => {
@@ -55,7 +59,7 @@ describe('The PRCA Orchestrator', () => {
                     return Promise.resolve(true);
                 });
         });
-        it('fails deleting old PRCA comments', () => {
+        it('fails deleting old PRCA comments but we don\'t raise a reject promise', () => {
             // Arrange
             var expectedMessages: Message[] = [fakeMessage, fakeMessage];
             server.createCodeAnalysisThreads(expectedMessages); // post some messages to test that the orchestrator doesn't delete them
@@ -65,11 +69,11 @@ describe('The PRCA Orchestrator', () => {
             // Act
             return orchestrator.postSonarQubeIssuesToPullRequest(sqReportPath)
                 .then(() => {
-                    return Promise.reject('Should not have finished successfully');
-                }, (error) => {
-                    // We expect to fail
                     expect(server.getSavedMessages()).to.eql(expectedMessages, 'Expected existing PRCA messages to still be on the server');
                     return Promise.resolve(true);
+                }, (error) => {
+                    // We expect to fail
+                    return Promise.reject(`We should not raise a reject error like ${error}`);
                 });
         });
 
@@ -101,8 +105,9 @@ describe('The PRCA Orchestrator', () => {
         beforeEach(() => {
             testLogger = new TestLogger();
             server = new MockPrcaService();
-            sqReportProcessor = new SonarQubeReportProcessor(testLogger);
-            orchestrator = new PrcaOrchestrator(testLogger, sqReportProcessor, server);
+            let severityService: ISeverityService = new SeverityService(testLogger);
+            sqReportProcessor = new SonarQubeReportProcessor(testLogger, severityService, '');
+            orchestrator = new PrcaOrchestrator(testLogger, sqReportProcessor, server, '');
         });
 
         it('has no comments to post (no issues reported)', () => {
@@ -160,7 +165,7 @@ describe('The PRCA Orchestrator', () => {
             return orchestrator.postSonarQubeIssuesToPullRequest(sqReportPath)
                 .then(() => {
                     // Assert
-                    expect(server.getSavedMessages()).to.have.length(2, 'Correct number of comments');
+                    expect(server.getSavedMessages()).to.have.length(1, 'Correct number of comments');
                 });
         });
 
@@ -170,17 +175,17 @@ describe('The PRCA Orchestrator', () => {
             var sqReportPath: string = path.join(__dirname, 'data', 'sonar-no-issues.json');
             let mockSqReportProcessor: MockSonarQubeReportProcessor = new MockSonarQubeReportProcessor();
             let orchestrator: PrcaOrchestrator =
-                new PrcaOrchestrator(testLogger, mockSqReportProcessor, server);
+                new PrcaOrchestrator(testLogger, mockSqReportProcessor, server, '');
 
             let messages: Message[] = [];
             // Set (getMessageLimit() + 50) messages to return
             for (var i = 0; i < orchestrator.getMessageLimit() + 50; i = i + 1) {
                 let message: Message;
-                // Some of the messages will have a higher priority, so that we can check that they have all been posted
+                // Some of the messages will have a higher severity, so that we can check that they have all been posted
                 if (i < orchestrator.getMessageLimit() + 30) {
-                    message = new Message('foo', 'src/main/java/com/mycompany/app/App.java', 1, 2);
+                    message = new Message('foo', 'src/main/java/com/mycompany/app/App.java', 1, 3);
                 } else {
-                    message = new Message('bar', 'src/main/java/com/mycompany/app/App.java', 1, 1);
+                    message = new Message('bar', 'src/main/java/com/mycompany/app/App.java', 1, 2);
                 }
                 messages.push(message);
             }
@@ -197,27 +202,27 @@ describe('The PRCA Orchestrator', () => {
                             return message.content === 'bar';
                         }
                     );
-                    expect(priorityOneThreads).to.have.length(20, 'High priority comments were all posted');
+                    expect(priorityOneThreads).to.have.length(20, 'High severity comments were all posted');
                 });
         });
 
-        it('has more high-priority comments to post than the limit allows', () => {
+        it('has more high-severity comments to post than the limit allows', () => {
             // Arrange
             server.setModifiedFilesInPr(['src/main/java/com/mycompany/app/App.java']);
             var sqReportPath: string = path.join(__dirname, 'data', 'sonar-no-issues.json');
             let mockSqReportProcessor: MockSonarQubeReportProcessor = new MockSonarQubeReportProcessor();
             let orchestrator: PrcaOrchestrator =
-                new PrcaOrchestrator(testLogger, mockSqReportProcessor, server);
+                new PrcaOrchestrator(testLogger, mockSqReportProcessor, server, '');
 
             let messages: Message[] = [];
             // Set (getMessageLimit() + 50) messages to return
             for (var i = 0; i < orchestrator.getMessageLimit() + 50; i += 1) {
                 let message: Message;
-                // (getMessageLimit() + 20 of the messages are high priority, so we expect all posted messages to be at the highest priority
+                // (getMessageLimit() + 20 of the messages are high severity, so we expect all posted messages to be at the highest severity
                 if (i < 30) {
-                    message = new Message('foo', 'src/main/java/com/mycompany/app/App.java', 1, 2);
+                    message = new Message('foo', 'src/main/java/com/mycompany/app/App.java', 1, 3);
                 } else {
-                    message = new Message('bar', 'src/main/java/com/mycompany/app/App.java', 1, 1);
+                    message = new Message('bar', 'src/main/java/com/mycompany/app/App.java', 1, 2);
                 }
                 messages.push(message);
             }
@@ -235,7 +240,7 @@ describe('The PRCA Orchestrator', () => {
                             return message.content === 'bar';
                         }
                     );
-                    expect(priorityOneThreads).to.have.length(orchestrator.getMessageLimit(), 'All posted comments were high priority');
+                    expect(priorityOneThreads).to.have.length(orchestrator.getMessageLimit(), 'All posted comments were high severity');
                 });
         });
 
@@ -248,13 +253,13 @@ describe('The PRCA Orchestrator', () => {
             let messages: Message[] = [];
             // Set 10 messages to return
             for (var i = 0; i < 10; i += 1) {
-                messages.push(new Message('bar', 'src/main/java/com/mycompany/app/App.java', 1, 1));
+                messages.push(new Message('bar', 'src/main/java/com/mycompany/app/App.java', 1, 2));
             }
             mockSqReportProcessor.SetCommentsToReturn(messages);
 
             // Act
             let orchestrator: PrcaOrchestrator =
-                new PrcaOrchestrator(testLogger, mockSqReportProcessor, server, 5); // set a message limit of 5
+                new PrcaOrchestrator(testLogger, mockSqReportProcessor, server, '', 5); // set a message limit of 5
 
             return orchestrator.postSonarQubeIssuesToPullRequest(sqReportPath)
                 .then(() => {

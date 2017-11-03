@@ -1,15 +1,15 @@
 /// <reference path="../../../typings/index.d.ts" />
 
-import { IGitApi } from 'vso-node-api/GitApi';
+import {IGitApi} from 'vso-node-api/GitApi';
 import * as gitInterfaces from 'vso-node-api/interfaces/GitInterfaces';
 
 import {Message} from './Message';
-import { ILogger } from './ILogger';
-import { IPrcaService } from './IPrcaService';
+import {ILogger} from './ILogger';
+import {IPrcaService} from './IPrcaService';
 
 /**
- * PR Code Analysis service 
- * 
+ * PR Code Analysis service
+ *
  * @export
  * @class PRCAService
  * @implements {IPRCAService}
@@ -25,11 +25,10 @@ export class PrcaService implements IPrcaService {
     private latestIterationId: number = -1;
     public /* for test purposes */ static PrcaCommentDescriptor: string = 'Microsoft.TeamFoundation.CodeAnalysis.PRCA';
 
-    constructor(
-        logger: ILogger,
-        gitApi: IGitApi,
-        repositoryId: string,
-        prId: number) {
+    constructor(logger: ILogger,
+                gitApi: IGitApi,
+                repositoryId: string,
+                prId: number) {
 
         if (!logger) {
             throw new ReferenceError('logger');
@@ -78,13 +77,13 @@ export class PrcaService implements IPrcaService {
         this.logger.LogDebug(`[PRCA] It took ${endTime - startTime} ms to create the threads`);
     }
 
-    public async deleteCodeAnalysisComments(): Promise<void> {
+    public async deleteCodeAnalysisComments(displayNames: string[]): Promise<void> {
 
-        this.logger.LogDebug('[PRCA] Deleting existing comments');
+        this.logger.LogInfo('[PRCA] Deleting existing comments');
 
         await this.fetchLatestIterationId();
 
-        this.logger.LogDebug('[PRCA] Fetching the existing threads');
+        this.logger.LogInfo('[PRCA] Fetching the existing threads');
         let threads = await this.gitApi.getThreads(this.repositoryId, this.prId, null, this.latestIterationId);
 
         let prcaThreads = threads.filter(th => {
@@ -94,7 +93,7 @@ export class PrcaService implements IPrcaService {
                 th.properties[PrcaService.PrcaCommentDescriptor].$value === 1; // $ is not a mistake here
         });
 
-        this.logger.LogDebug(`[PRCA] Found ${threads.length} threads out of which ${prcaThreads.length} were created by PRCA`);
+        this.logger.LogInfo(`[PRCA] Found ${threads.length} threads out of which ${prcaThreads.length} were created by PRCA`);
 
         let startTime = new Date().getTime();
         let deletePromises: Promise<void>[] = [];
@@ -103,24 +102,32 @@ export class PrcaService implements IPrcaService {
 
             if (visibleComments.length > 0) {
                 if (visibleComments.length > 1) {
-                    this.logger.LogDebug(
+                    this.logger.LogInfo(
                         `[PRCA] PRCA thread ${thread.id} has ${thread.comments.length} comments. User comments will be deleted!`);
                 }
 
                 visibleComments.forEach(c => {
-                    let deletePromise = this.gitApi.deleteComment(this.repositoryId, this.prId, thread.id, c.id);
-                    deletePromises.push(deletePromise);
+                    let displayName = '';
+                    let displayNameIsValid = c.author != null && typeof c.author !== undefined;
+                    if (displayNames.length === 0 || (displayNameIsValid && displayNames.indexOf(c.author.displayName) >= 0)) {
+                        if (displayNameIsValid) {
+                            displayName = c.author.displayName;
+                        }
+                        this.logger.LogInfo(`Try to delete repo id ${this.repositoryId} , ${this.prId}, thread id ${thread.id}, comment id [${c.id}], displayName [${displayName}] , content [${c.content}] `);
+                        let deletePromise = this.gitApi.deleteComment(this.repositoryId, this.prId, thread.id, c.id);
+                        deletePromises.push(deletePromise);
+                    }
                 });
 
             } else {
-                this.logger.LogDebug(`[PRCA] PRCA thread ${thread.id} has no comments`);
+                this.logger.LogInfo(`[PRCA] PRCA thread ${thread.id} has no comments`);
             }
         });
 
         await Promise.all(deletePromises);
 
         let endTime = new Date().getTime();
-        this.logger.LogDebug(`[PRCA] It took ${endTime - startTime} ms to delete ${deletePromises.length} existing comments`);
+        this.logger.LogInfo(`[PRCA] It took ${endTime - startTime} ms to delete ${deletePromises.length} existing comments`);
     }
 
     public async getModifiedFilesInPr(): Promise<string[]> {
@@ -189,10 +196,10 @@ export class PrcaService implements IPrcaService {
             changeTrackingId: 0,
             // create the comment as if looking at the current iteration compared to the first 
             iterationContext:
-            {
-                firstComparingIteration: 1,
-                secondComparingIteration: this.latestIterationId
-            },
+                {
+                    firstComparingIteration: 1,
+                    secondComparingIteration: this.latestIterationId
+                },
             trackingCriteria: null
         };
     }
@@ -207,7 +214,7 @@ export class PrcaService implements IPrcaService {
     }
 
     private createThreadContext(message: Message): gitInterfaces.CommentThreadContext {
-
+        this.logger.LogDebug(`[PRCA] createThreadContext ${message.file} `);
         return {
             filePath: message.file,
             // post comments only to the right pane

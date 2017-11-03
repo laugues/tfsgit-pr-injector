@@ -36,7 +36,7 @@ xit('Real web calls using token, no assertions!', async (done : Function) => {
 
         await prcaService.getModifiedFilesInPr();
         await prcaService.createCodeAnalysisThreads([new Message('Foo', '/Extractor/Program.cs', 1, 5)]);
-        await prcaService.deleteCodeAnalysisComments();
+        await prcaService.deleteCodeAnalysisComments([]);
         await prcaService.createCodeAnalysisThreads([new Message('Bar', '/ConsoleApplication1/App.config', 3, 1)]);
 
         done();
