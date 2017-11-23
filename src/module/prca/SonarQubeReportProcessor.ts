@@ -268,10 +268,10 @@ export class SonarQubeReportProcessor implements ISonarQubeReportProcessor {
             let severity: string = this.severityService.getSeverityDisplayName(priority);
             content = `**_${severity}_**: `;
         }
-
+        this.logger.LogInfo(`this.sonarQubeUrl = ${this.sonarQubeUrl}`);
         let descriptionLink: string = '';
         if (this.sonarQubeUrl != null && this.sonarQubeUrl !== '') {
-            descriptionLink = ` description is [here](${this.sonarQubeUrl}/coding_rules#q=${rule}|languages=java))`;
+            descriptionLink = ` description is [here](${this.sonarQubeUrl}coding_rules#q=${rule}|languages=java))`;
         }
         content += `${message} (${rule}).${descriptionLink}`;
 

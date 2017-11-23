@@ -159,8 +159,8 @@ export class PrcaOrchestrator {
                     });
             })
             .then((filesChanged: string[]) => {
-                this.logger.LogDebug(`[PRCA] ${filesChanged.length} changed files in the PR: ${filesChanged}`);
-                this.logger.LogDebug(`[PRCA] ${allMessages.length} messages exist before filtering`);
+                this.logger.LogInfo(`[PRCA] ${filesChanged.length} changed files in the PR: ${filesChanged}`);
+                this.logger.LogInfo(`[PRCA] ${allMessages.length} messages exist before filtering`);
                 this.logger.LogDebug(`[PRCA] All messages content : ${allMessages}`);
                 messagesToPost = this.filterMessages(filesChanged, allMessages);
                 this.logger.LogInfo(`[PRCA] ${messagesToPost.length} messages exist after filtering`);
@@ -193,6 +193,7 @@ export class PrcaOrchestrator {
         // Filter by message relating to files that were changed in this PR only
         let severityService = this.sqReportProcessor.getSeverityService();
         let minimumSeverity = severityService.getSeverityFromString(this._minimumSeverityToDisplay);
+        this.logger.LogDebug(`[PRCA] allMessages(${allMessages.length})`);
 
         result = allMessages.filter(
             (message: Message) => {
@@ -201,6 +202,8 @@ export class PrcaOrchestrator {
                     // If message.file is in filesChanged
 
                     for (let fileChangedInPr of filesChangedInPr) {
+                        this.logger.LogDebug(`[PRCA] fileChangedInPr(${fileChangedInPr}) ${message.severity} >= ${minimumSeverity} = ${message.severity >= minimumSeverity} `);
+
                         if (message.severity >= minimumSeverity) {
 
                             // case-insensitive normalising file path comparison

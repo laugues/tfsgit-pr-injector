@@ -1,8 +1,8 @@
 {
     "id": "683B88A0-96C3-11E6-8625-95B67567393D",
-    "name": "PullRequestCodeAnalysis",
-    "friendlyName": "SonarQube Pull Request Issues Viewer",
-    "description": "SonarQube Pull Request Code Analysis (Preview)",
+    "name": "ItesoftPullRequestCodeAnalysis",
+    "friendlyName": "Itesoft SonarQube PR Issues Viewer",
+    "description": "Itesoft SonarQube PR Code Analysis (Preview)",
     "helpMarkDown": "[More Information](https://aka.ms/prcabuildtask)",
     "category": "Build",
     "visibility": [
@@ -13,7 +13,7 @@
     "version": {
         "Major": 0,
         "Minor": 1,
-        "Patch": 16
+        "Patch": 1
     },
     "instanceNameFormat": "Pull Request Sonar Issues Viewer",
     "groups": [
@@ -21,7 +21,7 @@
             "name": "connectionSonar",
             "displayName": "Sonar Server Connection",
             "isExpanded": true
-        },        
+        },
 		{
             "name": "displayOptions",
             "displayName": "Display Options",
@@ -30,6 +30,11 @@
         {
             "name": "taskResultOptions",
             "displayName": "Task Result Options",
+            "isExpanded": true
+        },
+        {
+            "name": "sonarReportOptions",
+            "displayName": "Sonar Report Options",
             "isExpanded": true
         },
         {
@@ -82,7 +87,7 @@
             "groupName": "taskResultOptions",
             "helpMarkDown": "If at least on post issue has the provided severity the task will fail. Possible values (info,minor,major,critical,blocker, or none to disable it)",
 			"options": {
-                "none": "All",
+                "none": "None",
                 "info": "Info",
                 "minor": "Minor",
                 "major": "Major",
@@ -98,6 +103,15 @@
             "required": true,
             "groupName": "displayOptions",
             "helpMarkDown": "This parameter is only used for delete sonar comments : the task will delete only comments with provided display names "
+        },
+        {
+            "name": "sonarReportDirectoryPattern",
+            "type": "string",
+            "label": "The Sonar report directory pattern",
+            "defaultValue": "target\\**",
+            "required": true,
+            "groupName": "displayOptions",
+            "helpMarkDown": "The pattern directory in which the sonar report will be generated (Ex : **/taget/). The pattern is applied from the root source directory"
         }
     ],
     "execution": {
@@ -113,6 +127,7 @@
         "Error_InvalidFailedTaskSeverity": "Expected failed task severity to be whitin following values info,minor,major,critical,blocker or none but it was [%s]",
         "Error_InvalidCommentDisplayNamesToDelete": "Expected author display name for comment deletion to be NOT null or undefined but it was [%s]",
         "Error_InvalidPullRequestId": "Could not retrieve pull request ID from the server.",
+        "Error_InvalidSonarReportDirectoryPattern": "Invalid sonar report directory pattern.",
         "Error_FailedToGetAuthToken": "Could not get an authentication token from the build agent.",
         "Error_NoReport": "Could not find the SonarQube report file. Possible cause: the Maven or Gradle task did not complete the SonarQube analysis.",
         "Info_NotPullRequest": "Skipping pull request commenting - this build was not triggered by a pull request.",

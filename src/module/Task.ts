@@ -39,11 +39,13 @@ orchestrator.postSonarQubeIssuesToPullRequest(report)
 
 function findSQReportByName(): string {
 
+    let sonarReportDirectoryPattern = getSonarReportDirectoryPattern();
     let buildeSourceDirectory = tl.getVariable('build.sourcesDirectory');
 
 
     tl.debug(`[PRCA] findSQReportByName => buildeSourceDirectory ${buildeSourceDirectory}`);
-    let reportGlob = path.join(buildeSourceDirectory, '**', 'sonar-report.json');
+    tl.debug(`[PRCA] findSQReportByName => sonarReportDirectoryPattern ${sonarReportDirectoryPattern}`);
+    let reportGlob = path.join(buildeSourceDirectory, sonarReportDirectoryPattern, 'sonar-report.json');
     let reportGlobResults: string[] = glob.sync(reportGlob);
 
     tl.debug(`[PRCA] Searching for ${reportGlob} - found ${reportGlobResults.length} file(s)`);
@@ -132,6 +134,18 @@ function getFailedTaskSeverity(): string {
     return failedSeverity;
 }
 
+function getSonarReportDirectoryPattern(): string {
+    let sonarReportDirectoryPattern: string = tl.getInput('sonarReportDirectoryPattern');
+    if (typeof  sonarReportDirectoryPattern === undefined
+        || sonarReportDirectoryPattern === null) {
+        tl.setResult(tl.TaskResult.Failed, tl.loc('Error_InvalidSonarReportDirectoryPattern', sonarReportDirectoryPattern));
+        process.exit(1);
+    }
+
+    tl.debug('[PRCA] The sonar Report directory is: ' + sonarReportDirectoryPattern);
+    return sonarReportDirectoryPattern;
+}
+
 function getCommentDisplayNamesToDelete(): string[] {
     let parameter: string = tl.getInput('commentDisplayNamesToDelete');
     if (typeof  parameter === undefined
@@ -147,13 +161,11 @@ function getCommentDisplayNamesToDelete(): string[] {
 function getSonarQubeUrl(): string {
     // Check to ensure getEndpointUrl exists on the current agent
     if (tl.getEndpointUrl == null) {
-        tl.debug('Could not decode the generic endpoint. Please ensure you are running the latest agent (min version 0.3.2)');
-        throw new Error('Could not decode the generic endpoint. Please ensure you are running the latest agent (min version 0.3.2)');
+        tl.warning('Could not decode the generic endpoint. Please ensure you are running the latest agent (min version 0.3.2)');
     }
-
-    //let genericEndpointName: string = tl.getInput('sqConnectedServiceName');
-    let hostUrl: string = '';
-    //let hostUrl: string = tl.getEndpointUrl(genericEndpointName, false);
+    let genericEndpointName: string = tl.getInput('sqConnectedServiceName');
+    let hostUrl: string = tl.getEndpointUrl(genericEndpointName, false);
+    tl.debug(`[PRCA] SonarQube endpoint: ${hostUrl}`);
     if (hostUrl != null && hostUrl !== '' && !hostUrl.endsWith('/')) {
         hostUrl = hostUrl + '/';
     }
